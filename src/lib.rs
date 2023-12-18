@@ -1,4 +1,5 @@
 use nalgebra::{
+  DMatrix,
   Isometry3,
   Matrix4,
   Perspective3,
@@ -63,7 +64,6 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>) {
 #[wasm_bindgen]
 pub fn run() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
-    log!("starting");
 
     wasm_bindgen_futures::spawn_local(async move {
       let angles = set_up_mouse_handlers();
@@ -72,8 +72,24 @@ pub fn run() -> Result<(), JsValue> {
       let program = make_shader_program(&ctx);
 
       let num_vertices = 100i32;
+      log!("generating {} random vertices", num_vertices);
       let vertices = generate_vertices(num_vertices);
+      log!("computing distances");
+      let distances = compute_squared_distances(&vertices);
+      log!("loading vertex data");
       load_vertices(&ctx, &program, &vertices);
+
+      let lines = compute_lines(0.25, &distances);
+      let num_lines = lines.len();
+      let lines: Vec<u8> = lines.iter().flat_map(|(i,j)| { vec![*i, *j] }).collect();
+
+      let index_buffer = ctx.create_buffer().unwrap();
+      ctx.bind_buffer(WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER, Some(&index_buffer));
+      ctx.buffer_data_with_u8_array(
+        WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER,
+        &lines,
+        WebGl2RenderingContext::STATIC_DRAW,
+      ); 
 
       let eye = Point3::new(0.0, 0.0, 1.0);
       let target = Point3::new(0.0, 0.0, 0.0);
@@ -104,6 +120,13 @@ pub fn run() -> Result<(), JsValue> {
           WebGl2RenderingContext::POINTS,
           0,
           num_vertices,
+        );
+
+        ctx.draw_elements_with_i32(
+          WebGl2RenderingContext::LINES,
+          num_lines as i32,
+          WebGl2RenderingContext::UNSIGNED_BYTE,
+          0,
         );
 
         request_animation_frame(draw_fn0.borrow().as_ref().unwrap());
