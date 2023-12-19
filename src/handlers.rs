@@ -3,7 +3,10 @@ use std::{
   rc::Rc,
 };
 use wasm_bindgen::prelude::*;
-use web_sys::MouseEvent;
+use web_sys::{
+  KeyboardEvent,
+  MouseEvent,
+};
 
 // creates the behavior that allows click+drag to change the
 // rotation angles. the function returns a shared reference
@@ -58,3 +61,21 @@ pub fn set_up_mouse_handlers() -> Rc<RefCell<(f32, f32)>> {
   angles
 }
 
+pub fn set_up_keypress_handler() {
+  let handle_keypress = {
+    Closure::<dyn FnMut(KeyboardEvent)>::new(move |evt: KeyboardEvent| {
+      match evt.key().as_ref() {
+        "ArrowLeft" => {
+          log!("ArrowLeft");
+        },
+        "ArrowRight" => {
+          log!("ArrowRight");
+        },
+        _ => {},
+      }
+    })
+  };
+  let window = web_sys::window().unwrap();
+  window.set_onkeydown(Some(handle_keypress.as_ref().unchecked_ref()));
+  handle_keypress.forget();
+}

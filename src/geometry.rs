@@ -1,6 +1,7 @@
 use nalgebra::{
   DMatrix,
 };
+use std::collections::HashSet;
 use web_sys::{
   WebGl2RenderingContext,
   WebGlProgram
@@ -25,16 +26,16 @@ pub fn load_vertices(
     );
   }
   // configure the buffer to be used as the 'coords' attribute in vertex shader
-  let coords_location = ctx.get_attrib_location(program, "coords");
+  let coords_location = ctx.get_attrib_location(program, "coords") as u32;
   ctx.vertex_attrib_pointer_with_i32(
-    coords_location as u32,
+    coords_location,
     3,
     WebGl2RenderingContext::FLOAT,
     false,
     0,
     0,
   );
-  ctx.enable_vertex_attrib_array(coords_location as u32);
+  ctx.enable_vertex_attrib_array(coords_location);
 }
 
 fn rnd() -> f32 {
@@ -49,28 +50,56 @@ pub fn generate_vertices(n: i32) -> Vec<(f32,f32,f32)> {
     .collect()
 }
 
-pub fn compute_squared_distances(points: &Vec<(f32,f32,f32)>) -> DMatrix<f32> {
-  let n = points.len();
-  DMatrix::from_fn(n, n, |i, j| {
-    let (x0, y0, z0) = points[i];
-    let (x1, y1, z1) = points[j];
-    let x = x1-x0;
-    let y = y1-y0;
-    let z = z1-z0;
-    x*x + y*y + z*z
-  })
+pub struct Distances {
+  inner: Vec<(f32, (u8, u8))>
 }
 
-pub fn compute_lines(distance_threshold: f32, distances: &DMatrix<f32>) -> Vec<(u8,u8)> {
-  let mut result = Vec::new();
-  let d = distance_threshold * distance_threshold;
-  for i in 0..distances.nrows() {
-    for j in i..distances.ncols() {
-      if distances[(i,j)] < d {
-        result.push((i as u8,j as u8));
+fn distance(points: &Vec<(f32,f32,f32)>, i: usize, j: usize) -> f32 {
+  let (x0, y0, z0) = points[i];
+  let (x1, y1, z1) = points[j];
+  let x = x1-x0;
+  let y = y1-y0;
+  let z = z1-z0;
+  (x*x + y*y + z*z).sqrt()
+}
+
+impl Distances {
+  pub fn new(points: &Vec<(f32,f32,f32)>) -> Self {
+    let mut inner = Vec::new();
+    for i in 0..points.len() {
+      for j in i+1..points.len() {
+        let d = distance(points, i, j);
+        inner.push((d, (i as u8, j as u8)));
       }
     }
+    inner.sort_by(|(d1, _), (d2, _)| d1.partial_cmp(d2).unwrap());
+    Distances { inner }
   }
-  result
+
+  pub fn lines(&self, d: f32) -> Vec<(u8,u8)> {
+    self.inner.iter()
+      .map_while(|(d0,p)| if *d0 < d { Some(*p) } else { None })
+      .collect()
+  }
+
+  pub fn triangles(&self, d: f32) -> Vec<(u8,u8,u8)> {
+    let lines = self.lines(d);
+    let lines_set: HashSet<(u8,u8)> = lines.iter().map(|x| *x).collect();
+    let vertices: HashSet<u8> = lines.iter().flat_map(|(a,b)| vec![*a,*b]).collect();
+    let mut result: HashSet<(u8,u8,u8)> = HashSet::new();
+    for (a,b) in lines {
+      for &v in vertices.iter() {
+        if v > b {
+          let l1 = (a,v);
+          let l2 = (b,v);
+          if lines_set.contains(&l1) && lines_set.contains(&l2) {
+            result.insert((a,b,v));
+          }
+        }
+      }
+    }
+    result.into_iter().collect()
+  }
+
 }
 

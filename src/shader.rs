@@ -29,10 +29,11 @@ fn vertex_shader(ctx: &WebGl2RenderingContext) -> WebGlShader {
 
 fn fragment_shader(ctx: &WebGl2RenderingContext) -> WebGlShader {
   let src = "#version 300 es
-    precision mediump float;
+    precision highp float;
     out vec4 out_color;
+    uniform vec4 color;
     void main(void) {
-      out_color = vec4(1.0, 0.0, 0.0, 1.0);
+      out_color = color;
     }    
   ";
   compile_shader(ctx, WebGl2RenderingContext::FRAGMENT_SHADER, src)
