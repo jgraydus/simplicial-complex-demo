@@ -7,6 +7,7 @@ use nalgebra::{
 };
 use std::{
   cell::RefCell,
+  collections::HashSet,
   rc::Rc,
 };
 use wasm_bindgen::prelude::*;
@@ -23,11 +24,11 @@ macro_rules! log {
   }
 }
 
-mod geometry;
-use geometry::*;
-
 mod handlers;
 use handlers::*;
+
+mod model;
+use model::*;
 
 mod shader;
 use shader::*;
@@ -60,57 +61,32 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>) {
     .request_animation_frame(f.as_ref().unchecked_ref()).unwrap();
 }
 
+const NUM_VERTICES: i32 = 200;
+
 #[wasm_bindgen]
 pub fn run() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
 
     wasm_bindgen_futures::spawn_local(async move {
       let angles = set_up_mouse_handlers();
-      set_up_keypress_handler();
 
       let ctx = get_webgl_context();
       let program = make_shader_program(&ctx);
 
-      let num_vertices: i32 = 100;
-      log!("generating {} random vertices", num_vertices);
-      let vertices = generate_vertices(num_vertices);
-      log!("computing distances");
-      let distances = Distances::new(&vertices);
-      log!("loading vertex data");
-      load_vertices(&ctx, &program, &vertices);
-
       let distance_threshold: f32 = 0.25;
+      let mut model = Rc::new(RefCell::new(Model::new(NUM_VERTICES)));
+      model.borrow_mut().update_distance_threshold(distance_threshold);
 
-      let lines = distances.lines(distance_threshold);
-      let num_lines = lines.len() as i32;
-      let mut lines: Vec<u8> = lines.iter().flat_map(|(i,j)| { vec![*i, *j] }).collect();
+      model.borrow().load_vertex_data(&ctx, &program);
+      model.borrow().load_index_data(&ctx);
 
-      let triangles = distances.triangles(distance_threshold);
-      let num_triangles = triangles.len() as i32;
-      let mut triangles: Vec<u8> = triangles.iter().flat_map(|(i,j,k)| vec![*i,*j,*k]).collect();
-
-      let mut geometry = Vec::new();
-      geometry.append(&mut lines);
-      geometry.append(&mut triangles);
-
-      let index_buffer = ctx.create_buffer().unwrap();
-      ctx.bind_buffer(WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER, Some(&index_buffer));
-      ctx.buffer_data_with_u8_array(
-        WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER,
-        &geometry,
-        WebGl2RenderingContext::STATIC_DRAW,
-      );
+      set_up_keypress_handler(ctx.clone(), model.clone());
 
       let eye = Point3::new(0.0, 0.0, 1.0);
       let target = Point3::new(0.0, 0.0, 0.0);
       let view = Isometry3::look_at_rh(&eye, &target, &Vector3::y());
       let projection = Perspective3::new(1.0, 3.14 / 2.0, 0.0, 1000.0);
       let view_projection = projection.into_inner() * view.to_homogeneous();
-      let transform_location = ctx.get_uniform_location(&program, "transform");
-
-      let color_location = ctx.get_uniform_location(&program, "color");
-      let color1: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
-      let color2: [f32; 4] = [0.4, 0.0, 0.0, 1.0];
 
       let draw_fn0= Rc::new(RefCell::new(None));
       let draw_fn1 = draw_fn0.clone();
@@ -118,47 +94,12 @@ pub fn run() -> Result<(), JsValue> {
       *draw_fn1.borrow_mut() = Some(Closure::new(move || {
         let (a, b) = *angles.borrow();
 
-        let model = Matrix4::from_euler_angles(b, a, 0.0);
-        let model_view_projection = view_projection * model;
+        let model_view_projection = {
+          let model = Matrix4::from_euler_angles(b, a, 0.0);
+          view_projection * model
+        };
 
-        ctx.uniform_matrix4fv_with_f32_array(
-          transform_location.as_ref(),
-          false,
-          model_view_projection.as_slice()
-        );
-
-        ctx.clear_color(0.0, 0.0, 0.0, 1.0);
-        ctx.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
-        ctx.uniform4fv_with_f32_array(
-          color_location.as_ref(),
-          &color2,
-        );
-
-        ctx.draw_elements_with_i32(
-          WebGl2RenderingContext::TRIANGLES,
-          num_triangles*3,
-          WebGl2RenderingContext::UNSIGNED_BYTE,
-          num_lines*2,
-        );
-
-        ctx.uniform4fv_with_f32_array(
-          color_location.as_ref(),
-          &color1,
-        );
-
-        ctx.draw_arrays(
-          WebGl2RenderingContext::POINTS,
-          0,
-          num_vertices,
-        );
-
-        ctx.draw_elements_with_i32(
-          WebGl2RenderingContext::LINES,
-          num_lines*2,
-          WebGl2RenderingContext::UNSIGNED_BYTE,
-          0,
-        );
+        model.borrow().draw(&ctx, &program, model_view_projection.as_slice());
 
         request_animation_frame(draw_fn0.borrow().as_ref().unwrap());
       }));

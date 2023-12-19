@@ -1,3 +1,4 @@
+use crate::model::Model;
 use std::{
   cell::RefCell,
   rc::Rc,
@@ -6,6 +7,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::{
   KeyboardEvent,
   MouseEvent,
+  WebGl2RenderingContext,
 };
 
 // creates the behavior that allows click+drag to change the
@@ -61,15 +63,19 @@ pub fn set_up_mouse_handlers() -> Rc<RefCell<(f32, f32)>> {
   angles
 }
 
-pub fn set_up_keypress_handler() {
+pub fn set_up_keypress_handler(ctx: WebGl2RenderingContext, model: Rc<RefCell<Model>>) {
   let handle_keypress = {
     Closure::<dyn FnMut(KeyboardEvent)>::new(move |evt: KeyboardEvent| {
       match evt.key().as_ref() {
         "ArrowLeft" => {
-          log!("ArrowLeft");
+          let d = f32::max(0.0, model.borrow().distance_threshold() - 0.025);
+          model.borrow_mut().update_distance_threshold(d);
+          model.borrow().load_index_data(&ctx);
         },
         "ArrowRight" => {
-          log!("ArrowRight");
+          let d = model.borrow().distance_threshold() + 0.025;
+          model.borrow_mut().update_distance_threshold(d);
+          model.borrow().load_index_data(&ctx);
         },
         _ => {},
       }
