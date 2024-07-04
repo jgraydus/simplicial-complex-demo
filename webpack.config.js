@@ -6,9 +6,8 @@ const dist = path.resolve(__dirname, "dist");
 
 module.exports = {
   mode: "production",
-  entry: {
-    index: "./js/index.js"
-  },
+  entry: { index: "./js/index.js" },
+  experiments: { asyncWebAssembly: true },
   output: {
     path: dist,
     filename: "[name].js"
@@ -17,13 +16,15 @@ module.exports = {
     contentBase: dist,
   },
   plugins: [
-    new CopyPlugin([
-      path.resolve(__dirname, "static")
-    ]),
-
-    new WasmPackPlugin({
-      crateDirectory: __dirname,
+    new CopyPlugin({
+      patterns: [
+	{
+	  from: path.resolve(__dirname, "static"), 
+	  to: path.resolve(__dirname, "dist")
+	},
+      ]
     }),
+    new WasmPackPlugin({ crateDirectory: __dirname }),
   ],
 }
 
